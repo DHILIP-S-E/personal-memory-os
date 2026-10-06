@@ -10,6 +10,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import { listMemory, searchMemory, askMemory } from './memoryApi';
 import type { AskResponse, MemoryDocument } from '../../types/index';
 import { itemText, type ListItem } from '../../lib/itemText';
+import { apiErrorMessage } from '../../lib/apiError';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Ask zone
@@ -29,7 +30,7 @@ function AskZone() {
       const res = await askMemory(question);
       setResult(res);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to get answer');
+      setError(apiErrorMessage(err, 'Failed to get answer'));
     } finally {
       setLoading(false);
     }
