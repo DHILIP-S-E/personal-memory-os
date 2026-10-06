@@ -11,6 +11,7 @@ import CreateEventModal from './CreateEventModal';
 import { listEvents } from './eventsApi';
 import { extractEvent } from '../ai/aiApi';
 import type { Event, ExtractEventResponse } from '../../types/index';
+import { apiErrorMessage } from '../../lib/apiError';
 
 type FilterTab = 'all' | 'draft' | 'upcoming' | 'active' | 'completed';
 
@@ -47,7 +48,7 @@ export default function EventsScreen() {
       setAiText('');
       setShowCreateModal(true);
     } catch (err: unknown) {
-      setAiError(err instanceof Error ? err.message : 'AI extraction failed');
+      setAiError(apiErrorMessage(err, 'AI extraction failed'));
     } finally {
       setAiExtracting(false);
     }
