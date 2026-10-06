@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:personal_memory_os/shared/widgets/error_banner.dart';
 import 'package:personal_memory_os/core/providers/capture_provider.dart';
 import 'package:personal_memory_os/core/services/camera_service.dart';
 import 'package:personal_memory_os/core/theme/app_theme.dart';
@@ -214,6 +215,11 @@ class _CaptureScreenState extends State<CaptureScreen> {
         if (provider.isLoading) {
           return const Center(
             child: CircularProgressIndicator(color: AppColors.accent),
+          );
+        }
+        if (provider.error != null && provider.captures.isEmpty) {
+          return Center(
+            child: ErrorBanner(message: provider.error!, onRetry: provider.loadCaptures),
           );
         }
         if (provider.captures.isEmpty) {
