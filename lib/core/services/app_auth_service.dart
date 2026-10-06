@@ -36,7 +36,7 @@ class AppAuthService implements AuthService {
         Uri.parse('$baseUrl$path'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(body),
-      );
+      ).timeout(const Duration(seconds: 20));
 
   /// The backend's `detail` message, or a generic one.
   static String _detail(http.Response r, String fallback) {
@@ -56,7 +56,7 @@ class AppAuthService implements AuthService {
       // Keep the real cause visible (log + short hint) instead of hiding every
       // failure behind "check your connection".
       debugPrint('AppAuthService $path failed: $e');
-      throw AuthException('Cannot reach the server (${e.runtimeType}). Check your connection.');
+      throw const AuthException('Cannot reach the server. Check your internet connection and try again.');
     }
     if (r.statusCode != 200 && r.statusCode != 201) {
       throw AuthException(_detail(r, 'Sign-in failed'));
