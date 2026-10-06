@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:personal_memory_os/core/utils/error_text.dart';
+import 'package:personal_memory_os/shared/widgets/error_banner.dart';
 import 'package:personal_memory_os/core/models/reminder.dart';
 import 'package:personal_memory_os/core/providers/reminder_provider.dart';
 import 'package:personal_memory_os/core/providers/event_provider.dart';
@@ -62,13 +64,15 @@ class _TodayScreenState extends State<TodayScreen> {
           createdAt: now,
           updatedAt: now,
         );
-        await context.read<ReminderProvider>().createReminder(reminder);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Task "$title" created'),
-              duration: const Duration(seconds: 2),
-            ),
+        final messenger = ScaffoldMessenger.of(context);
+        try {
+          await context.read<ReminderProvider>().createReminder(reminder);
+          messenger.showSnackBar(
+            SnackBar(content: Text('Task "$title" created'), duration: const Duration(seconds: 2)),
+          );
+        } catch (e) {
+          messenger.showSnackBar(
+            SnackBar(content: Text(friendlyError(e.toString())), backgroundColor: AppColors.urgent),
           );
         }
       },
@@ -338,6 +342,12 @@ class _TodayScreenState extends State<TodayScreen> {
                     displayList = allToday.where((r) => r.status == ReminderStatus.completed).toList();
                   } else {
                     displayList = [...provider.overdueReminders, ...allToday];
+                  }
+
+                  if (displayList.isEmpty && provider.error != null) {
+                    return SliverToBoxAdapter(
+                      child: ErrorBanner(message: provider.error!, onRetry: provider.loadReminders),
+                    );
                   }
 
                   if (displayList.isEmpty) {
