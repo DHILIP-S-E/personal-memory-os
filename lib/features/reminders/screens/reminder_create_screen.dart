@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:personal_memory_os/core/utils/error_text.dart';
 import 'package:personal_memory_os/core/models/reminder.dart';
 import 'package:personal_memory_os/core/providers/reminder_provider.dart';
 import 'package:personal_memory_os/core/providers/auth_provider.dart';
@@ -141,7 +142,7 @@ class _ReminderCreateScreenState extends State<ReminderCreateScreen>
       await context.read<ReminderProvider>().createReminder(reminder);
       if (mounted) context.pop();
     } catch (e) {
-      _showError(e.toString());
+      _showError(friendlyError(e.toString()));
     }
   }
 
