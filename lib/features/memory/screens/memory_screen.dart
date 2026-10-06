@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:personal_memory_os/shared/widgets/error_banner.dart';
 import 'package:personal_memory_os/core/providers/memory_provider.dart';
 import 'package:personal_memory_os/core/providers/event_provider.dart';
 import 'package:personal_memory_os/core/theme/app_theme.dart';
@@ -96,6 +97,12 @@ class _MemoryScreenState extends State<MemoryScreen> {
 
         final events = eventP.events
           ..sort((a, b) => b.startAt.compareTo(a.startAt));
+
+        if (eventP.error != null && events.isEmpty) {
+          return SliverToBoxAdapter(
+            child: ErrorBanner(message: eventP.error!, onRetry: eventP.loadEvents),
+          );
+        }
 
         if (events.isEmpty) {
           return SliverToBoxAdapter(
