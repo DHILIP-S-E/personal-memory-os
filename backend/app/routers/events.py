@@ -8,11 +8,12 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.validation import clean_text, optional_http_url, real_timezone
 from app.auth import get_current_user_id
 from app.database import get_db
 from app.models.event import Event, EventDeadline
@@ -31,6 +32,11 @@ class DeadlineIn(BaseModel):
     deadline_type: str = "custom"
     deadline_at: datetime
 
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v):
+        return clean_text(v, "Title")
+
 
 class EventCreate(BaseModel):
     title: str
@@ -45,6 +51,27 @@ class EventCreate(BaseModel):
     organizer: Optional[str] = None
     registration_url: Optional[str] = None
     deadlines: list[DeadlineIn] = []
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v):
+        return clean_text(v, "Title")
+
+    @field_validator("timezone")
+    @classmethod
+    def _timezone(cls, v):
+        return real_timezone(v)
+
+    @field_validator("event_url", "registration_url")
+    @classmethod
+    def _links(cls, v):
+        return optional_http_url(v, "Link")
+
+    @model_validator(mode="after")
+    def _end_not_before_start(self):
+        if self.end_at is not None and self.end_at < self.start_at:
+            raise ValueError("The event cannot end before it starts")
+        return self
 
 
 class EventUpdate(BaseModel):
