@@ -22,7 +22,7 @@ class TodayScreen extends StatefulWidget {
 }
 
 class _TodayScreenState extends State<TodayScreen> {
-  String _taskFilter = 'todo'; // 'todo', 'in_progress', 'completed', 'all'
+  String _taskFilter = 'all'; // 'todo', 'in_progress' (overdue), 'completed', 'all'
 
   @override
   void initState() {
