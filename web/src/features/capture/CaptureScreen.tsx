@@ -16,6 +16,7 @@ import {
 } from './capturesApi';
 import { listEvents } from '../events/eventsApi';
 import type { Capture, AIResult } from '../../types/index';
+import { apiErrorMessage } from '../../lib/apiError';
 
 type CaptureTab = 'note' | 'link' | 'photo' | 'document';
 
@@ -156,7 +157,7 @@ function TextNoteTab({ onSuccess }: { onSuccess: () => void }) {
       setEventId('');
       onSuccess();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save note');
+      setError(apiErrorMessage(err, 'Failed to save note'));
     } finally {
       setLoading(false);
     }
@@ -208,7 +209,7 @@ function LinkTab({ onSuccess }: { onSuccess: () => void }) {
       setEventId('');
       onSuccess();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save link');
+      setError(apiErrorMessage(err, 'Failed to save link'));
     } finally {
       setLoading(false);
     }
@@ -305,7 +306,7 @@ function FileUploadTab({
       if (fileInputRef.current) fileInputRef.current.value = '';
       onSuccess();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      setError(apiErrorMessage(err, 'Upload failed'));
       setProgress(null);
     } finally {
       setLoading(false);
