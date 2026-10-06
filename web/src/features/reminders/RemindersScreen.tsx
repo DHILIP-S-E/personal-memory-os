@@ -10,6 +10,7 @@ import CreateReminderModal from './CreateReminderModal';
 import { listReminders, updateReminder, deleteReminder } from './remindersApi';
 import { parseReminder } from '../ai/aiApi';
 import type { Reminder, ParseReminderResponse } from '../../types/index';
+import { apiErrorMessage } from '../../lib/apiError';
 
 type FilterTab = 'all' | 'active' | 'completed' | 'overdue';
 
@@ -63,7 +64,7 @@ export default function RemindersScreen() {
       const result = await parseReminder(aiText);
       setAiResult(result);
     } catch (err: unknown) {
-      setAiError(err instanceof Error ? err.message : 'AI parsing failed');
+      setAiError(apiErrorMessage(err, 'AI parsing failed'));
     } finally {
       setAiParsing(false);
     }
