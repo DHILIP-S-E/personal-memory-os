@@ -6,10 +6,11 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.validation import clean_text
 from app.auth import get_current_user_id
 from app.database import get_db
 from app.models.memory import MemoryDocument
@@ -21,6 +22,11 @@ router = APIRouter()
 
 class AskRequest(BaseModel):
     question: str
+
+    @field_validator("question")
+    @classmethod
+    def _question(cls, v):
+        return clean_text(v, "Question", max_len=2000)
 
 
 @router.get("")
