@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Button from '../../components/ui/Button';
 import { createReminder } from './remindersApi';
 import type { ReminderCreate, ParseReminderResponse } from '../../types/index';
+import { apiErrorMessage } from '../../lib/apiError';
 
 interface CreateReminderModalProps {
   onClose: () => void;
@@ -61,7 +62,7 @@ export default function CreateReminderModal({ onClose, prefill }: CreateReminder
       queryClient.invalidateQueries({ queryKey: ['reminders'] });
       onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to create reminder';
+      const msg = apiErrorMessage(err, 'Failed to create reminder');
       setError(msg);
     } finally {
       setSaving(false);
