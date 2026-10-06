@@ -15,13 +15,14 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user_id
 from app.database import get_db
 from app.models.capture import Capture
+from app import validation as v
 from app.services.capture_ai import process_text_capture
 from app.services.capture_queue import enqueue_text_capture
 from app.services.s3_service import (
@@ -39,11 +40,34 @@ _S3_KEY_TEMPLATE = "users/{user_id}/{event_part}{capture_type}/{capture_id}.{ext
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
 
+FILE_TYPES = {"photo", "voice", "document", "video"}
+
+
 class UploadUrlRequest(BaseModel):
-    capture_type: str          # photo | voice | document
+    capture_type: str          # photo | voice | document | video
     file_extension: str        # jpg | m4a | pdf | mp4
     content_type: str          # image/jpeg | audio/m4a | application/pdf
     event_id: Optional[str] = None
+
+    @field_validator("capture_type")
+    @classmethod
+    def _type(cls, x):
+        return v.one_of(x, FILE_TYPES, "Capture type")
+
+    @field_validator("file_extension")
+    @classmethod
+    def _ext(cls, x):
+        return v.file_extension(x)
+
+    @field_validator("content_type")
+    @classmethod
+    def _ctype(cls, x):
+        return v.content_type(x)
+
+    @field_validator("event_id")
+    @classmethod
+    def _event(cls, x):
+        return None if x in (None, "") else v.safe_id(x, "Event id")
 
 
 class RegisterCaptureRequest(BaseModel):
@@ -54,15 +78,53 @@ class RegisterCaptureRequest(BaseModel):
     mime_type: Optional[str] = None
     duration: Optional[int] = None   # seconds, for audio/video
 
+    @field_validator("capture_id")
+    @classmethod
+    def _id(cls, x):
+        return v.safe_id(x, "Capture id")
+
+    @field_validator("capture_type")
+    @classmethod
+    def _type(cls, x):
+        return v.one_of(x, FILE_TYPES, "Capture type")
+
+    @field_validator("event_id")
+    @classmethod
+    def _event(cls, x):
+        return None if x in (None, "") else v.safe_id(x, "Event id")
+
+
+MAX_NOTE = 50_000
+
 
 class TextNoteRequest(BaseModel):
     content: str
     event_id: Optional[str] = None
 
+    @field_validator("content")
+    @classmethod
+    def _content(cls, x):
+        return v.clean_text(x, "Note", max_len=MAX_NOTE)
+
+    @field_validator("event_id")
+    @classmethod
+    def _event(cls, x):
+        return None if x in (None, "") else v.safe_id(x, "Event id")
+
 
 class LinkRequest(BaseModel):
     url: str
     event_id: Optional[str] = None
+
+    @field_validator("url")
+    @classmethod
+    def _url(cls, x):
+        return v.http_url(x, "Link")
+
+    @field_validator("event_id")
+    @classmethod
+    def _event(cls, x):
+        return None if x in (None, "") else v.safe_id(x, "Event id")
 
 
 class CaptureUpdateRequest(BaseModel):
@@ -107,6 +169,9 @@ async def register_capture(
     db: AsyncSession = Depends(get_db),
 ):
     """Step 3 — register capture in DB after successful S3 upload."""
+    if not v.owns_storage_key(body.storage_key, user_id):
+        # Otherwise a user could register someone else's file and then download or delete it.
+        raise HTTPException(status_code=422, detail="storage_key does not belong to you")
     now = datetime.utcnow()
     capture = Capture(
         id=body.capture_id,
@@ -224,6 +289,8 @@ async def get_download_url(
             status_code=404,
             detail="This capture has no associated file",
         )
+    if not v.owns_storage_key(capture.storage_key, user_id):
+        raise HTTPException(status_code=404, detail="This capture has no associated file")
     url = generate_download_url(capture.storage_key)
     return {"download_url": url, "expires_in": 3600}
 
@@ -263,7 +330,7 @@ async def delete_capture(
 ):
     capture = await _get_owned(capture_id, user_id, db)
     # Remove S3 object if present
-    if capture.storage_key:
+    if capture.storage_key and v.owns_storage_key(capture.storage_key, user_id):
         delete_object(capture.storage_key)
     await db.delete(capture)
     await db.commit()
