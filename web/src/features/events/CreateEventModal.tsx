@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Button from '../../components/ui/Button';
 import { createEvent } from './eventsApi';
 import type { EventCreate, DeadlineIn, ExtractEventResponse } from '../../types/index';
+import { apiErrorMessage } from '../../lib/apiError';
 
 interface CreateEventModalProps {
   onClose: () => void;
@@ -92,7 +93,7 @@ export default function CreateEventModal({ onClose, prefill }: CreateEventModalP
       queryClient.invalidateQueries({ queryKey: ['events'] });
       onClose();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create event');
+      setError(apiErrorMessage(err, 'Failed to create event'));
     } finally {
       setSaving(false);
     }
