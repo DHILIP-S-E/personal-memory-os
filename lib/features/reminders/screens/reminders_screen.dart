@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:personal_memory_os/shared/widgets/error_banner.dart';
 import 'package:personal_memory_os/core/providers/reminder_provider.dart';
 import 'package:personal_memory_os/core/theme/app_theme.dart';
 import 'package:personal_memory_os/core/router/app_router.dart';
@@ -155,6 +156,12 @@ class _RemindersScreenState extends State<RemindersScreen> {
         }
 
         final reminders = provider.filteredReminders;
+
+        if (provider.error != null && reminders.isEmpty) {
+          return Center(
+            child: ErrorBanner(message: provider.error!, onRetry: provider.loadReminders),
+          );
+        }
 
         if (reminders.isEmpty) {
           return EmptyState(
