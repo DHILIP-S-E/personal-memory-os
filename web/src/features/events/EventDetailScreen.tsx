@@ -19,6 +19,7 @@ import {
 import { listCaptures } from '../capture/capturesApi';
 import type { Event, EventUpdate, DeadlineIn, MemoryDocument, Capture } from '../../types/index';
 import { itemText, type ListItem } from '../../lib/itemText';
+import { apiErrorMessage } from '../../lib/apiError';
 
 type Tab = 'overview' | 'captures' | 'deadlines' | 'reminders' | 'summary';
 
@@ -169,7 +170,7 @@ function OverviewTab({ event }: { event: Event }) {
       queryClient.invalidateQueries({ queryKey: ['events'] });
       setEditing(false);
     } catch (err: unknown) {
-      setEditError(err instanceof Error ? err.message : 'Failed to save');
+      setEditError(apiErrorMessage(err, 'Failed to save'));
     } finally {
       setSaving(false);
     }
@@ -398,7 +399,7 @@ function DeadlinesTab({ event }: { event: Event }) {
       queryClient.invalidateQueries({ queryKey: ['events', event.id] });
       setForm({ title: '', deadline_type: 'submission', deadline_at: '' });
     } catch (error: unknown) {
-      setErr(error instanceof Error ? error.message : 'Failed to add deadline');
+      setErr(apiErrorMessage(error, 'Failed to add deadline'));
     } finally {
       setSaving(false);
     }
@@ -486,7 +487,7 @@ function RemindersTab({ eventId }: { eventId: string }) {
       setPolicy(result as PolicyReminder[]);
       setApplied(false);
     } catch (err: unknown) {
-      setPreviewError(err instanceof Error ? err.message : 'Failed to load policy');
+      setPreviewError(apiErrorMessage(err, 'Failed to load policy'));
     } finally {
       setPreviewing(false);
     }
@@ -499,7 +500,7 @@ function RemindersTab({ eventId }: { eventId: string }) {
       await applyReminderPolicy(eventId);
       setApplied(true);
     } catch (err: unknown) {
-      setApplyError(err instanceof Error ? err.message : 'Failed to apply policy');
+      setApplyError(apiErrorMessage(err, 'Failed to apply policy'));
     } finally {
       setApplying(false);
     }
@@ -602,7 +603,7 @@ function SummaryTab({ event }: { event: Event }) {
       queryClient.invalidateQueries({ queryKey: ['events', event.id] });
       queryClient.invalidateQueries({ queryKey: ['event-summary', event.id] });
     } catch (err: unknown) {
-      setGenError(err instanceof Error ? err.message : 'Failed to generate summary');
+      setGenError(apiErrorMessage(err, 'Failed to generate summary'));
     } finally {
       setGenerating(false);
     }
