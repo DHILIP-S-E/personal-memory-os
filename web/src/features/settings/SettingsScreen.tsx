@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import { apiErrorMessage } from '../../lib/apiError';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -32,7 +33,7 @@ function DeleteDialog({ onCancel, onConfirm }: DeleteDialogProps) {
     try {
       await onConfirm();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to delete account');
+      setError(apiErrorMessage(err, 'Failed to delete account'));
       setLoading(false);
     }
   }
@@ -102,7 +103,7 @@ export default function SettingsScreen() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err: unknown) {
-      setExportError(err instanceof Error ? err.message : 'Export failed');
+      setExportError(apiErrorMessage(err, 'Export failed'));
     } finally {
       setExportLoading(false);
     }
