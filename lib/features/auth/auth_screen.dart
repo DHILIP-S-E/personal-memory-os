@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:personal_memory_os/core/utils/error_text.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:personal_memory_os/core/providers/auth_provider.dart';
@@ -25,35 +26,39 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
+  bool _busy = false;
+  String? _error;
+
   Future<void> _handleEmailAuth() async {
+    if (_busy) return;
     final email = _emailController.text.trim();
     final password = _passwordController.text;
 
     if (email.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill in all fields')),
-      );
+      setState(() => _error = 'Please enter your email and password.');
       return;
     }
 
     final provider = context.read<AuthProvider>();
-    bool success;
-
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    final bool success;
     if (_isSignUp) {
       success = await provider.signUp(email, password, email.split('@').first);
     } else {
       success = await provider.signInWithEmail(email, password);
     }
-
-    if (success && mounted) {
+    if (!mounted) return;
+    if (success) {
       context.go(AppRoutes.today);
       return;
     }
-    if (!mounted) return;
-    if (provider.error != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(provider.error!)));
-    }
+    setState(() {
+      _busy = false;
+      _error = friendlyError(provider.error ?? '');
+    });
   }
 
   @override
@@ -179,15 +184,37 @@ class _AuthScreenState extends State<AuthScreen> {
           ),
           onSubmitted: (_) => _handleEmailAuth(),
         ),
+        if (_error != null) ...[
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFFECACA)),
+            ),
+            child: Text(
+              _error!,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF7F1D1D), height: 1.35),
+            ),
+          ),
+        ],
         const SizedBox(height: 20),
         Consumer<AuthProvider>(
           builder: (_, p, __) => SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed: p.status == AuthStatus.unknown
+              onPressed: (p.status == AuthStatus.unknown || _busy)
                   ? null
                   : _handleEmailAuth,
-              child: Text(_isSignUp ? 'Create account' : 'Sign in'),
+              child: _busy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : Text(_isSignUp ? 'Create account' : 'Sign in'),
             ),
           ),
         ),
