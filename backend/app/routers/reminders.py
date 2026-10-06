@@ -7,10 +7,11 @@ import json
 import logging
 import uuid
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +24,35 @@ from app.services import scheduling
 router = APIRouter()
 logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
+
+PRIORITIES = {"high", "medium", "low"}
+STATUSES = {"active", "snoozed", "completed", "missed", "cancelled", "overdue"}
+MAX_TITLE = 500
+
+
+def _clean_title(v: str) -> str:
+    v = v.strip()
+    if not v:
+        raise ValueError("Title cannot be empty")
+    if len(v) > MAX_TITLE:
+        raise ValueError(f"Title is too long (max {MAX_TITLE} characters)")
+    return v
+
+
+def _one_of(allowed: set[str], label: str):
+    def check(v: str) -> str:
+        if v not in allowed:
+            raise ValueError(f"{label} must be one of: {', '.join(sorted(allowed))}")
+        return v
+    return check
+
+
+def _real_timezone(v: str) -> str:
+    try:
+        ZoneInfo(v)
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        raise ValueError("Unknown timezone; use a name like Asia/Kolkata")
+    return v
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -42,6 +72,21 @@ class ReminderCreate(BaseModel):
     offsets: Optional[list[str]] = []
     depends_on_id: Optional[str] = None  # conditional: fire only if this one is not done
 
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v):
+        return _clean_title(v)
+
+    @field_validator("priority")
+    @classmethod
+    def _priority(cls, v):
+        return _one_of(PRIORITIES, "Priority")(v)
+
+    @field_validator("timezone")
+    @classmethod
+    def _timezone(cls, v):
+        return _real_timezone(v)
+
 
 class ReminderUpdate(BaseModel):
     title: Optional[str] = None
@@ -50,6 +95,21 @@ class ReminderUpdate(BaseModel):
     scheduled_at: Optional[datetime] = None
     priority: Optional[str] = None
     alarm_enabled: Optional[bool] = None
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v):
+        return None if v is None else _clean_title(v)
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v):
+        return None if v is None else _one_of(STATUSES, "Status")(v)
+
+    @field_validator("priority")
+    @classmethod
+    def _priority(cls, v):
+        return None if v is None else _one_of(PRIORITIES, "Priority")(v)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
