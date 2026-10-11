@@ -47,6 +47,33 @@ class EventProvider extends ChangeNotifier {
         .toList();
   }
 
+  /// Applies an action that closes a milestone, swaps in the event the server returns, and
+  /// gives back how many reminders were stopped. Failures are recorded and rethrown so the
+  /// screen can say what went wrong.
+  Future<int> _apply(Future<MilestoneChange> Function() action) async {
+    try {
+      final change = await action();
+      final i = _events.indexWhere((e) => e.id == change.event.id);
+      if (i != -1) _events[i] = change.event;
+      _error = null;
+      notifyListeners();
+      return change.stoppedReminders;
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<int> setRegistrationStatus(String eventId, RegistrationStatus status) =>
+      _apply(() => _service.setRegistrationStatus(eventId, status));
+
+  Future<int> completeMilestone(String eventId, String deadlineId) =>
+      _apply(() => _service.completeMilestone(eventId, deadlineId));
+
+  Future<int> skipMilestone(String eventId, String deadlineId) =>
+      _apply(() => _service.skipMilestone(eventId, deadlineId));
+
   Future<void> loadEvents() async {
     _isLoading = true;
     _error = null;
