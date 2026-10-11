@@ -106,10 +106,13 @@ class ReminderProvider extends ChangeNotifier {
     notifyListeners();
     try {
       _reminders = await _service.fetchReminders();
-      // Re-schedule local notifications for all active reminders
+      // Keep the device layer in step with the server: schedule what is active, and silence
+      // what was stopped elsewhere (a finished milestone, the web, another phone).
       for (final r in _reminders) {
         if (r.status == ReminderStatus.active && r.alarmEnabled) {
           await NotificationService.scheduleReminder(r);
+        } else if (r.status == ReminderStatus.cancelled || r.status == ReminderStatus.completed) {
+          await NotificationService.cancelReminder(r.id);
         }
       }
     } catch (e) {
