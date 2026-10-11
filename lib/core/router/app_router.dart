@@ -10,6 +10,7 @@ import 'package:personal_memory_os/features/memory/screens/memory_search_screen.
 import 'package:personal_memory_os/features/memory/screens/ai_chat_screen.dart';
 import 'package:personal_memory_os/features/events/screens/event_create_screen.dart';
 import 'package:personal_memory_os/features/events/screens/event_detail_screen.dart';
+import 'package:personal_memory_os/features/settings/notification_history_screen.dart';
 import 'package:personal_memory_os/features/settings/settings_screen.dart';
 import 'package:personal_memory_os/core/providers/auth_provider.dart';
 import 'package:personal_memory_os/shell.dart';
@@ -28,6 +29,7 @@ class AppRoutes {
   static const eventCreate = '/events/create';
   static const eventDetail = '/events/:id';
   static const settings = '/settings';
+  static const notificationHistory = '/settings/notifications';
 }
 
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -96,6 +98,11 @@ GoRouter createAppRouter(AuthProvider auth) => GoRouter(
       path: AppRoutes.reminderCreate,
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const ReminderCreateScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.notificationHistory,
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const NotificationHistoryScreen(),
     ),
     GoRoute(
       path: AppRoutes.memorySearch,
