@@ -23,6 +23,38 @@ enum EventStatus {
   cancelled,
 }
 
+/// Where the user stands on registering for an event (spec 4.4).
+enum RegistrationStatus {
+  notStarted,
+  planned,
+  inProgress,
+  registered,
+  waitlisted,
+  failed,
+  notEligible,
+  skipped,
+  expired;
+
+  /// The wire value the backend uses, e.g. `in_progress`.
+  String get apiValue => name.replaceAllMapped(RegExp('[A-Z]'), (m) => '_${m[0]!.toLowerCase()}');
+
+  String get label => switch (this) {
+        notStarted => 'Not started',
+        planned => 'Planned',
+        inProgress => 'In progress',
+        registered => 'Registered',
+        waitlisted => 'Waitlisted',
+        failed => 'Failed',
+        notEligible => 'Not eligible',
+        skipped => 'Skipped',
+        expired => 'Expired',
+      };
+
+  /// Reaching one of these stops the registration reminders (and only those).
+  bool get stopsReminders =>
+      this == registered || this == skipped || this == notEligible || this == expired;
+}
+
 class Event {
   final String id;
   final String userId;
@@ -37,6 +69,7 @@ class Event {
   final String? eventUrl;
   final String? organizer;
   final String? registrationUrl;
+  final RegistrationStatus registrationStatus;
   final EventStatus status;
   final List<EventDeadline> deadlines;
   final DateTime createdAt;
@@ -62,6 +95,7 @@ class Event {
     this.eventUrl,
     this.organizer,
     this.registrationUrl,
+    this.registrationStatus = RegistrationStatus.notStarted,
     this.status = EventStatus.upcoming,
     this.deadlines = const [],
     required this.createdAt,
@@ -86,6 +120,7 @@ class Event {
     String? eventUrl,
     String? organizer,
     String? registrationUrl,
+    RegistrationStatus? registrationStatus,
     EventStatus? status,
     List<EventDeadline>? deadlines,
     DateTime? createdAt,
@@ -109,6 +144,7 @@ class Event {
       eventUrl: eventUrl ?? this.eventUrl,
       organizer: organizer ?? this.organizer,
       registrationUrl: registrationUrl ?? this.registrationUrl,
+      registrationStatus: registrationStatus ?? this.registrationStatus,
       status: status ?? this.status,
       deadlines: deadlines ?? this.deadlines,
       createdAt: createdAt ?? this.createdAt,
@@ -134,6 +170,7 @@ class Event {
         'eventUrl': eventUrl,
         'organizer': organizer,
         'registrationUrl': registrationUrl,
+        'registrationStatus': registrationStatus.name,
         'status': status.name,
         'deadlines': deadlines.map((d) => d.toJson()).toList(),
         'createdAt': createdAt.toIso8601String(),
@@ -158,6 +195,8 @@ class Event {
         eventUrl: json['eventUrl'],
         organizer: json['organizer'],
         registrationUrl: json['registrationUrl'],
+        registrationStatus: RegistrationStatus.values
+            .byName(json['registrationStatus'] ?? 'notStarted'),
         status: EventStatus.values.byName(json['status'] ?? 'upcoming'),
         deadlines: (json['deadlines'] as List<dynamic>? ?? [])
             .map((d) => EventDeadline.fromJson(d))
