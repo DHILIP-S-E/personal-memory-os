@@ -41,6 +41,7 @@ import 'package:personal_memory_os/core/sync/prefs_store.dart';
 import 'package:personal_memory_os/core/sync/sync_coordinator.dart';
 import 'package:personal_memory_os/core/widget/home_widget_bridge.dart';
 import 'package:personal_memory_os/core/widget/widget_sync.dart';
+import 'package:personal_memory_os/core/services/timezone_sync.dart';
 import 'package:personal_memory_os/core/sync/sync_queue.dart';
 
 void main() async {
@@ -154,6 +155,8 @@ class _PersonalMemoryOsAppState extends State<PersonalMemoryOsApp> {
     _auth.addListener(() {
       if (_auth.isAuthenticated) {
         _push?.register();
+        // Quiet hours and recurring reminders follow the phone's own clock.
+        unawaited(syncDeviceTimezone(_accountService));
         _openPendingShare();
       }
     });
