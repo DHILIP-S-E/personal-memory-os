@@ -57,4 +57,23 @@ class ApiEventService implements EventService {
   Future<void> deleteEvent(String id) async {
     await _client.delete('/events/$id');
   }
+
+  /// Runs a milestone action, then reads the event back so the app shows exactly what the server holds.
+  Future<MilestoneChange> _change(String eventId, Future<dynamic> Function() action) async {
+    final result = await action() as Map<String, dynamic>;
+    final stopped = (result['stopped_reminders'] as List<dynamic>? ?? const []).length;
+    return MilestoneChange(eventFromApi(await _client.get('/events/$eventId')), stopped);
+  }
+
+  @override
+  Future<MilestoneChange> setRegistrationStatus(String eventId, RegistrationStatus status) =>
+      _change(eventId, () => _client.post('/events/$eventId/registration-status', {'status': status.apiValue}));
+
+  @override
+  Future<MilestoneChange> completeMilestone(String eventId, String deadlineId) =>
+      _change(eventId, () => _client.post('/events/$eventId/deadlines/$deadlineId/complete', {}));
+
+  @override
+  Future<MilestoneChange> skipMilestone(String eventId, String deadlineId) =>
+      _change(eventId, () => _client.post('/events/$eventId/deadlines/$deadlineId/skip', {}));
 }
