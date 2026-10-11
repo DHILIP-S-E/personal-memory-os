@@ -17,6 +17,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user_id
 from app.database import get_db
 from app.models.reminder import Reminder
+from app.models.user import User
+from app.services.quiet_hours import is_real_timezone
 from app.services import scheduling
 from app.validation import clean_text, one_of, real_timezone
 
@@ -95,6 +97,13 @@ async def create_reminder(
     if body.depends_on_id:
         await _get_owned(body.depends_on_id, user_id, db)  # 404 if not yours
     now = datetime.utcnow()
+    # A client that sends the bare default "UTC" gets the user's saved timezone, so recurrence
+    # and quiet hours follow the user's own clock.
+    tz = body.timezone
+    if not is_real_timezone(tz):
+        saved = (await db.execute(select(User.timezone).where(User.id == user_id))).scalar_one_or_none()
+        if is_real_timezone(saved):
+            tz = saved
     reminder = Reminder(
         id=str(uuid.uuid4()),
         user_id=user_id,
@@ -102,7 +111,7 @@ async def create_reminder(
         description=body.description,
         reminder_type=body.reminder_type,
         scheduled_at=body.scheduled_at,
-        timezone=body.timezone,
+        timezone=tz,
         priority=body.priority,
         alarm_enabled=body.alarm_enabled,
         notification_enabled=body.notification_enabled,
