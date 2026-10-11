@@ -29,11 +29,14 @@ def build_reminder_policy(
     title: str,
     event_type: str,
     start_at: datetime,
-    deadlines: list[tuple[str, datetime]],
+    deadlines: list[tuple],
     now: datetime,
 ) -> list[dict]:
     """Reminder specs for an event: event-day reminders plus registration /
-    submission deadline reminders. Only future instants, sorted by time."""
+    submission deadline reminders. Only future instants, sorted by time.
+
+    A deadline is (title, at) or (title, at, milestone_id). The id tags each of its reminders
+    so finishing that milestone stops exactly those and no others."""
     out: list[dict] = []
     for minutes in _EVENT_OFFSETS.get(event_type, _DEFAULT_OFFSETS):
         at = start_at - timedelta(minutes=minutes)
@@ -44,7 +47,8 @@ def build_reminder_policy(
                 "scheduled_at": at,
                 "priority": "medium",
             })
-    for dl_title, dl_at in deadlines:
+    for dl_title, dl_at, *rest in deadlines:
+        milestone_id = rest[0] if rest else None
         for minutes in _DEADLINE_OFFSETS:
             at = dl_at - timedelta(minutes=minutes)
             if at > now:
@@ -53,5 +57,6 @@ def build_reminder_policy(
                     "reminder_type": "deadline",
                     "scheduled_at": at,
                     "priority": "high",
+                    "milestone_id": milestone_id,
                 })
     return sorted(out, key=lambda r: r["scheduled_at"])
