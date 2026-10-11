@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:personal_memory_os/core/models/event.dart';
 import 'package:personal_memory_os/core/providers/event_provider.dart';
 import 'package:personal_memory_os/core/providers/capture_provider.dart';
+import 'package:personal_memory_os/core/providers/reminder_provider.dart';
+import 'package:personal_memory_os/core/utils/error_text.dart';
 import 'package:personal_memory_os/core/theme/app_theme.dart';
 import 'package:personal_memory_os/core/utils/date_utils.dart';
 import 'package:personal_memory_os/core/router/app_router.dart';
@@ -33,7 +35,8 @@ class EventDetailScreen extends StatelessWidget {
       body: CustomScrollView(
         slivers: [
           _buildHeader(context, event),
-          _buildDeadlines(event),
+          _buildRegistration(context, event),
+          _buildDeadlines(context, event),
           SliverToBoxAdapter(child: ReminderPlanSection(event: event)),
           _buildCaptures(context, event),
           _buildMemorySection(context, event),
@@ -112,7 +115,7 @@ class EventDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildDeadlines(Event event) {
+  Widget _buildDeadlines(BuildContext context, Event event) {
     if (event.deadlines.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
 
     return SliverToBoxAdapter(
@@ -157,8 +160,15 @@ class EventDetailScreen extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(d.title,
-                            style: AppTextStyles.titleMedium),
+                        Text(
+                          d.title,
+                          style: d.isClosed
+                              ? AppTextStyles.titleMedium.copyWith(
+                                  decoration: TextDecoration.lineThrough,
+                                  color: AppColors.textMuted,
+                                )
+                              : AppTextStyles.titleMedium,
+                        ),
                         Text(
                           AppDateUtils.formatDateTime(d.deadlineAt),
                           style: AppTextStyles.caption,
@@ -166,17 +176,30 @@ class EventDetailScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Text(
-                    AppDateUtils.timeUntil(d.deadlineAt),
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: d.deadlineAt.isBefore(
-                              DateTime.now().add(const Duration(days: 3)))
-                          ? AppColors.urgent
-                          : AppColors.warning,
+                  if (d.isClosed)
+                    Text(
+                      _closedLabel(d),
+                      key: ValueKey('closed-${d.id}'),
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textMuted,
+                      ),
+                    )
+                  else ...[
+                    Text(
+                      AppDateUtils.timeUntil(d.deadlineAt),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: d.deadlineAt.isBefore(
+                                DateTime.now().add(const Duration(days: 3)))
+                            ? AppColors.urgent
+                            : AppColors.warning,
+                      ),
                     ),
-                  ),
+                    _milestoneMenu(context, event, d),
+                  ],
                 ],
               ),
             ),
@@ -184,6 +207,129 @@ class EventDetailScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  // ── Registration and milestones ───────────────────────────────────────────
+
+  static String _closedLabel(EventDeadline d) => switch (d.status) {
+        'completed' => 'Done',
+        'skipped' => 'Skipped',
+        'expired' => 'Expired',
+        _ => d.status,
+      };
+
+  bool _hasRegistration(Event event) =>
+      event.registrationUrl != null ||
+      event.deadlines.any((d) => d.deadlineType == DeadlineType.registration);
+
+  Widget _buildRegistration(BuildContext context, Event event) {
+    if (!_hasRegistration(event)) return const SliverToBoxAdapter(child: SizedBox.shrink());
+    final status = event.registrationStatus;
+    return SliverToBoxAdapter(
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.cardBorder),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              status.stopsReminders ? Icons.check_circle_outline : Icons.how_to_reg_outlined,
+              color: status == RegistrationStatus.registered ? AppColors.success : AppColors.textSecondary,
+              size: 22,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Registration', style: AppTextStyles.caption),
+                  Text(status.label, key: const ValueKey('registration-status'), style: AppTextStyles.titleMedium),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () => _pickRegistrationStatus(context, event),
+              child: const Text('Change'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickRegistrationStatus(BuildContext context, Event event) async {
+    final chosen = await showModalBottomSheet<RegistrationStatus>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      showDragHandle: true,
+      builder: (sheet) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text(
+                'Registered, skipped, not eligible or expired stop the registration reminders. Submission and other reminders keep going.',
+                style: AppTextStyles.caption,
+              ),
+            ),
+            for (final s in RegistrationStatus.values)
+              ListTile(
+                title: Text(s.label),
+                trailing: s == event.registrationStatus ? const Icon(Icons.check, color: AppColors.accent) : null,
+                onTap: () => Navigator.of(sheet).pop(s),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || chosen == event.registrationStatus || !context.mounted) return;
+    await _run(
+      context,
+      () => context.read<EventProvider>().setRegistrationStatus(event.id, chosen),
+      (stopped) => stopped > 0
+          ? '${chosen.label}. $stopped registration reminder${stopped == 1 ? '' : 's'} stopped.'
+          : chosen.label,
+    );
+  }
+
+  Widget _milestoneMenu(BuildContext context, Event event, EventDeadline d) {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert, size: 18, color: AppColors.textMuted),
+      onSelected: (action) => _run(
+        context,
+        () => action == 'done'
+            ? context.read<EventProvider>().completeMilestone(event.id, d.id)
+            : context.read<EventProvider>().skipMilestone(event.id, d.id),
+        (stopped) => stopped > 0
+            ? '${action == 'done' ? 'Done' : 'Skipped'}. $stopped reminder${stopped == 1 ? '' : 's'} stopped.'
+            : (action == 'done' ? 'Done' : 'Skipped'),
+      ),
+      itemBuilder: (_) => const [
+        PopupMenuItem(value: 'done', child: Text('Mark done')),
+        PopupMenuItem(value: 'skip', child: Text('Skip')),
+      ],
+    );
+  }
+
+  /// Runs a change, then re-reads reminders so the ones the server stopped also stop ringing on
+  /// this phone. A failure is shown in plain words; the screen never just goes quiet.
+  Future<void> _run(BuildContext context, Future<int> Function() change, String Function(int) message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final reminders = context.read<ReminderProvider>();
+    try {
+      final stopped = await change();
+      await reminders.loadReminders();
+      messenger.showSnackBar(SnackBar(content: Text(message(stopped))));
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(friendlyError(e.toString())), backgroundColor: AppColors.urgent),
+      );
+    }
   }
 
   Widget _buildCaptures(BuildContext context, Event event) {
