@@ -1,11 +1,27 @@
 import 'package:uuid/uuid.dart';
 import 'package:personal_memory_os/core/models/event.dart';
 
+/// The event after closing a milestone, and how many of its reminders were stopped with it.
+class MilestoneChange {
+  final Event event;
+  final int stoppedReminders;
+
+  const MilestoneChange(this.event, this.stoppedReminders);
+}
+
 abstract class EventService {
   Future<List<Event>> fetchEvents();
   Future<Event> createEvent(Event event);
   Future<Event> updateEvent(Event event);
   Future<void> deleteEvent(String id);
+
+  /// Track registration. Finishing it (registered, skipped, not eligible, expired) stops the
+  /// registration reminders only; reminders for other milestones keep running.
+  Future<MilestoneChange> setRegistrationStatus(String eventId, RegistrationStatus status);
+
+  /// Mark one milestone done or skipped. Only its own reminders stop.
+  Future<MilestoneChange> completeMilestone(String eventId, String deadlineId);
+  Future<MilestoneChange> skipMilestone(String eventId, String deadlineId);
 }
 
 class StubEventService implements EventService {
@@ -23,6 +39,48 @@ class StubEventService implements EventService {
     _events.add(event);
     return event;
   }
+
+  Event _replace(Event updated) {
+    final i = _events.indexWhere((e) => e.id == updated.id);
+    if (i != -1) _events[i] = updated;
+    return updated;
+  }
+
+  Event _find(String id) => _events.firstWhere((e) => e.id == id);
+
+  @override
+  Future<MilestoneChange> setRegistrationStatus(String eventId, RegistrationStatus status) async {
+    final event = _find(eventId);
+    final closing = status.stopsReminders;
+    final deadlines = [
+      for (final d in event.deadlines)
+        closing && d.deadlineType == DeadlineType.registration && !d.isClosed
+            ? d.withStatus(status == RegistrationStatus.registered
+                ? 'completed'
+                : status == RegistrationStatus.expired ? 'expired' : 'skipped')
+            : d,
+    ];
+    return MilestoneChange(_replace(event.copyWith(registrationStatus: status, deadlines: deadlines)), 0);
+  }
+
+  Future<MilestoneChange> _close(String eventId, String deadlineId, String newStatus) async {
+    final event = _find(eventId);
+    if (!event.deadlines.any((d) => d.id == deadlineId)) throw StateError('Milestone not found');
+    return MilestoneChange(
+      _replace(event.copyWith(deadlines: [
+        for (final d in event.deadlines) d.id == deadlineId ? d.withStatus(newStatus) : d,
+      ])),
+      0,
+    );
+  }
+
+  @override
+  Future<MilestoneChange> completeMilestone(String eventId, String deadlineId) =>
+      _close(eventId, deadlineId, 'completed');
+
+  @override
+  Future<MilestoneChange> skipMilestone(String eventId, String deadlineId) =>
+      _close(eventId, deadlineId, 'skipped');
 
   @override
   Future<Event> updateEvent(Event event) async {
