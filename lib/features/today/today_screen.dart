@@ -11,6 +11,7 @@ import 'package:personal_memory_os/core/providers/capture_provider.dart';
 import 'package:personal_memory_os/core/providers/auth_provider.dart';
 import 'package:personal_memory_os/core/theme/app_theme.dart';
 import 'package:personal_memory_os/core/router/app_router.dart';
+import 'package:personal_memory_os/features/today/widgets/pending_registrations_card.dart';
 import 'package:personal_memory_os/features/today/widgets/today_progress_card.dart';
 import 'package:personal_memory_os/features/today/widgets/today_task_card.dart';
 import 'package:personal_memory_os/features/today/widgets/task_schedule_section.dart';
@@ -377,6 +378,9 @@ class _TodayScreenState extends State<TodayScreen> {
                   );
                 },
               ),
+
+              // Registrations still to finish: shows only when there are some
+              const SliverToBoxAdapter(child: PendingRegistrationsCard()),
 
               const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
