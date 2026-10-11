@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import get_current_user_id
 from app.config import settings
-from app.routers import reminders, events, captures, memory, ai, account, devices, auth
+from app.routers import reminders, events, captures, memory, ai, account, devices, auth, notifications, dashboard
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -44,6 +44,8 @@ app.include_router(memory.router, prefix="/memory", tags=["memory"])
 app.include_router(ai.router, prefix="/ai", tags=["ai"])
 app.include_router(account.router, prefix="/account", tags=["account"])
 app.include_router(devices.router, prefix="/devices", tags=["devices"])
+app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
+app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 
 
 @app.get("/health", tags=["health"])
