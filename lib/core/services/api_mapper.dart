@@ -29,6 +29,13 @@ Map<String, dynamic> _obj(dynamic raw) =>
 /// 'follow_up' → 'followUp'. Null stays null.
 String? _enumValue(dynamic v) => v is String ? camelize(v) : null;
 
+/// The camel-cased value if it names one of [values], else [fallback]. The server stores some
+/// of these as free text, and one unknown value must never stop a whole list from loading.
+String _oneOf(dynamic v, Iterable<Enum> values, String fallback) {
+  final name = _enumValue(v);
+  return name != null && values.any((e) => e.name == name) ? name : fallback;
+}
+
 List<Map<String, dynamic>> _titledItems(dynamic list) =>
     (list as List<dynamic>? ?? []).map((e) {
       if (e is String) return <String, dynamic>{'title': e};
@@ -37,12 +44,12 @@ List<Map<String, dynamic>> _titledItems(dynamic list) =>
 
 Reminder reminderFromApi(dynamic raw) {
   final j = _obj(raw);
-  j['reminderType'] = _enumValue(j['reminderType']) ?? 'time';
-  j['priority'] = _enumValue(j['priority']) ?? 'medium';
-  j['status'] = _enumValue(j['status']) ?? 'active';
+  j['reminderType'] = _oneOf(j['reminderType'], ReminderType.values, 'time');
+  j['priority'] = _oneOf(j['priority'], ReminderPriority.values, 'medium');
+  j['status'] = _oneOf(j['status'], ReminderStatus.values, 'active');
   // Backend stores the event-policy source as 'event'.
   final source = _enumValue(j['source']) ?? 'manual';
-  j['source'] = source == 'event' ? 'eventPolicy' : source;
+  j['source'] = source == 'event' ? 'eventPolicy' : _oneOf(source, ReminderSource.values, 'manual');
   j['offsets'] = (j['offsets'] as List<dynamic>? ?? [])
       .map((o) => o is String ? {'offset': o, 'sent': false} : o)
       .toList();
@@ -67,11 +74,12 @@ Capture captureFromApi(dynamic raw) {
 
 Event eventFromApi(dynamic raw) {
   final j = _obj(raw);
-  j['eventType'] = _enumValue(j['eventType']) ?? 'custom';
-  j['status'] = _enumValue(j['status']) ?? 'upcoming';
+  j['eventType'] = _oneOf(j['eventType'], EventType.values, 'custom');
+  j['status'] = _oneOf(j['status'], EventStatus.values, 'upcoming');
+  j['registrationStatus'] = _oneOf(j['registrationStatus'], RegistrationStatus.values, 'notStarted');
   j['deadlines'] = (j['deadlines'] as List<dynamic>? ?? []).map((d) {
     final m = Map<String, dynamic>.from(d as Map);
-    m['deadlineType'] = _enumValue(m['deadlineType']) ?? 'custom';
+    m['deadlineType'] = _oneOf(m['deadlineType'], DeadlineType.values, 'custom');
     return m;
   }).toList();
   return Event.fromJson(j);
