@@ -13,12 +13,12 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import boto3
 import psycopg2
 
 from app.db_url import sync_database_url
+from app.services import quiet_hours
 from app.services.conditions import should_fire
 
 logger = logging.getLogger()
@@ -27,23 +27,29 @@ logger.setLevel(logging.INFO)
 _sns = None
 
 
-def in_quiet_hours(hour: int, start: int = 22, end: int = 7) -> bool:
-    if start == end:
-        return False
-    return start <= hour < end if start < end else (hour >= start or hour < end)
+in_quiet_hours = quiet_hours.in_quiet_hours
 
 
-def should_suppress(priority: str, fire_at: datetime, timezone_name: str | None = None) -> bool:
-    """High-priority reminders always ring; others respect quiet hours in the user's
-    own timezone. Without a real timezone ("UTC" is the app's default, not a place) we do NOT
-    suppress: quiet hours measured in the wrong zone would silently drop daytime reminders."""
-    if priority == "high" or not timezone_name or timezone_name.upper() == "UTC":
-        return False
-    try:
-        local = fire_at.astimezone(ZoneInfo(timezone_name))
-    except (ZoneInfoNotFoundError, ValueError):
-        return False
-    return in_quiet_hours(local.hour)
+def should_suppress(priority: str, fire_at: datetime, timezone_name: str | None = None, **settings) -> bool:
+    """High-priority reminders always ring; others respect quiet hours in the user's own
+    timezone (see app.services.quiet_hours). `settings` carries the user's saved
+    user_tz / enabled / start / end."""
+    return quiet_hours.should_suppress(priority, fire_at, timezone_name, **settings)
+
+
+def _user_settings(conn, user_id: str) -> dict:
+    """The user's saved timezone and quiet hours, read when the reminder fires so a change
+    applies to reminders that were scheduled earlier. Unknown user: defaults."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT timezone, quiet_hours_enabled, quiet_hours_start, quiet_hours_end FROM users WHERE id=%s",
+            (user_id,),
+        )
+        row = cur.fetchone()
+    if not row or len(row) != 4:
+        return {}
+    tz, enabled, start, end = row
+    return {"user_tz": tz, "enabled": True if enabled is None else bool(enabled), "start": start, "end": end}
 
 
 def build_message(title: str) -> dict:
@@ -91,7 +97,8 @@ def handler(event, _context):
             logger.info("Condition met, skipping %s", reminder_id)
             _record(conn, reminder_id, user_id, "cancelled", fire_at)
             return {"skipped": True}
-        if should_suppress(event.get("priority", "medium"), fire_at, event.get("timezone")):
+        settings = _user_settings(conn, user_id)
+        if should_suppress(event.get("priority", "medium"), fire_at, event.get("timezone"), **settings):
             logger.info("Quiet hours: suppressed push for %s", reminder_id)
             _record(conn, reminder_id, user_id, "cancelled", fire_at, error="quiet hours")
             return {"suppressed": True}
