@@ -92,6 +92,15 @@ def test_a_user_who_turned_quiet_hours_off_still_gets_it(monkeypatch):
     assert out["sent"] is True and len(sns.published) == 1
 
 
+def test_a_settings_lookup_failure_still_sends_the_reminder(monkeypatch):
+    def boom(conn, user_id):
+        raise RuntimeError("column does not exist")
+
+    monkeypatch.setattr(d, "_user_settings", boom)
+    out, sns = run(monkeypatch, None)
+    assert out["sent"] is True and len(sns.published) == 1
+
+
 def test_an_unknown_user_gets_the_safe_default_of_no_suppression(monkeypatch):
     out, _ = run(monkeypatch, None)
     assert out["sent"] is True
