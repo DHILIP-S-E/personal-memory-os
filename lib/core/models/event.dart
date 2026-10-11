@@ -242,6 +242,21 @@ class EventDeadline {
     required this.createdAt,
   });
 
+  EventDeadline withStatus(String newStatus) => EventDeadline(
+        id: id,
+        eventId: eventId,
+        userId: userId,
+        title: title,
+        deadlineType: deadlineType,
+        deadlineAt: deadlineAt,
+        source: source,
+        status: newStatus,
+        createdAt: createdAt,
+      );
+
+  /// Done, skipped or expired: nothing left to chase.
+  bool get isClosed => status != 'active';
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'eventId': eventId,
