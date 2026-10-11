@@ -24,6 +24,7 @@ class Event(Base):
     organizer: Mapped[str | None] = mapped_column(String(500))
     registration_url: Mapped[str | None] = mapped_column(String(1000))
     status: Mapped[str] = mapped_column(String(20), default="upcoming", index=True)
+    registration_status: Mapped[str] = mapped_column(String(20), default="not_started")
     summary_id: Mapped[str | None] = mapped_column(String(36))
     photo_count: Mapped[int] = mapped_column(default=0)
     voice_note_count: Mapped[int] = mapped_column(default=0)
@@ -54,6 +55,7 @@ class Event(Base):
             "event_url": self.event_url,
             "organizer": self.organizer,
             "registration_url": self.registration_url,
+            "registration_status": self.registration_status,
             "status": self.status,
             "summary_id": self.summary_id,
             "photo_count": self.photo_count,
@@ -79,6 +81,7 @@ class EventDeadline(Base):
     deadline_type: Mapped[str] = mapped_column(String(50), default="custom")
     deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active")
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
@@ -94,5 +97,6 @@ class EventDeadline(Base):
             "deadline_type": self.deadline_type,
             "deadline_at": self.deadline_at.isoformat(),
             "status": self.status,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "created_at": self.created_at.isoformat(),
         }
