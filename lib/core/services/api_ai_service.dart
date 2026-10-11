@@ -60,6 +60,8 @@ class ApiAiService implements AiService {
     );
   }
 
+  static List<String> _strings(dynamic v) => v is List ? v.whereType<String>().toList() : const [];
+
   @override
   Future<EventExtractionResult> extractEventFromText(String text) async {
     final data = await _client.post('/ai/extract-event', {
@@ -93,6 +95,15 @@ class ApiAiService implements AiService {
       organizer: data['organizer'] as String?,
       isVirtual: data['is_virtual'] as bool? ?? false,
       registrationDeadline: _parseDate(data['registration_deadline'] as String?),
+      submissionDeadline: _parseDate(data['submission_deadline'] as String?),
+      registrationUrl: data['registration_url'] as String?,
+      evidence: {
+        for (final e in (data['evidence'] as Map? ?? const {}).entries)
+          if (e.key is String && e.value is String) e.key as String: e.value as String,
+      },
+      missingFields: _strings(data['missing_fields']),
+      assumedTimes: _strings(data['assumed_times']),
+      ambiguousDates: _strings(data['ambiguous_dates']),
     );
   }
 
