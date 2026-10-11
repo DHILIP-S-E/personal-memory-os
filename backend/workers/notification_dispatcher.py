@@ -97,7 +97,13 @@ def handler(event, _context):
             logger.info("Condition met, skipping %s", reminder_id)
             _record(conn, reminder_id, user_id, "cancelled", fire_at)
             return {"skipped": True}
-        settings = _user_settings(conn, user_id)
+        try:
+            settings = _user_settings(conn, user_id)
+        except Exception:
+            # Never lose a reminder because the settings could not be read: send it, and say why.
+            logger.exception("Could not read settings for %s; sending without quiet hours", user_id)
+            conn.rollback()
+            settings = {}
         if should_suppress(event.get("priority", "medium"), fire_at, event.get("timezone"), **settings):
             logger.info("Quiet hours: suppressed push for %s", reminder_id)
             _record(conn, reminder_id, user_id, "cancelled", fire_at, error="quiet hours")
