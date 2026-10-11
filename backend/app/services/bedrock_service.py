@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 import boto3
+from app.services.event_extraction import normalize_extraction
 from app.config import settings
 from app.services.converse import build_request, extract_text
 from app.services.reminder_parser import detect_ambiguities, normalize_reminder
@@ -78,11 +79,13 @@ def parse_reminder(text: str, timezone: str = "UTC") -> dict:
     return result
 
 
-def extract_event(text: str) -> dict:
+def extract_event(text: str, source_url: str | None = None) -> dict:
     """
     Extract event metadata from pasted text / URL / email.
-    Uses the fast model (BEDROCK_MODEL_FAST).
-    Returns: {title, event_type, start_at, end_at, location, event_url, ...}
+    Uses the fast model (BEDROCK_MODEL_FAST). The model's answer is untrusted, so it is
+    cleaned by event_extraction.normalize_extraction before it is returned.
+    Returns: {title, event_type, start_at, end_at, location, event_url, registration_deadline,
+              submission_deadline, evidence, missing_fields, needs_user_review, ...}
     """
     template = _load_prompt("extract_event")
     prompt = _render(
@@ -91,11 +94,7 @@ def extract_event(text: str) -> dict:
         text=text,
     )
     raw = _invoke(settings.bedrock_model_fast, prompt, max_tokens=512)
-    result = _extract_json(raw)
-    result.setdefault("title", "Event")
-    result.setdefault("event_type", "custom")
-    result.setdefault("is_virtual", False)
-    return result
+    return normalize_extraction(_extract_json(raw), source_text=text, source_url=source_url)
 
 
 def answer_memory_question(question: str, docs: list) -> dict:
