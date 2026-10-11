@@ -2,6 +2,16 @@ import 'package:flutter/foundation.dart';
 import 'package:personal_memory_os/core/models/event.dart';
 import 'package:personal_memory_os/core/services/event_service.dart';
 
+/// An event whose registration is still open, with the deadline to register by.
+class PendingRegistration {
+  final Event event;
+  final EventDeadline deadline;
+
+  const PendingRegistration(this.event, this.deadline);
+
+  bool get overdue => deadline.deadlineAt.isBefore(DateTime.now());
+}
+
 class EventProvider extends ChangeNotifier {
   final EventService _service;
 
@@ -14,6 +24,23 @@ class EventProvider extends ChangeNotifier {
   List<Event> get events => _events;
   bool get isLoading => _isLoading;
   String? get error => _error;
+
+  /// Registrations still to finish (not started, planned or in progress, with an open registration
+  /// deadline), soonest deadline first. Once registered, skipped, not eligible or expired, an event is
+  /// no longer chased.
+  List<PendingRegistration> get pendingRegistrations {
+    const open = {RegistrationStatus.notStarted, RegistrationStatus.planned, RegistrationStatus.inProgress};
+    final out = <PendingRegistration>[];
+    for (final event in _events) {
+      if (!open.contains(event.registrationStatus) || event.status == EventStatus.cancelled) continue;
+      final deadlines = event.deadlines
+          .where((d) => d.deadlineType == DeadlineType.registration && !d.isClosed)
+          .toList()
+        ..sort((a, b) => a.deadlineAt.compareTo(b.deadlineAt));
+      if (deadlines.isNotEmpty) out.add(PendingRegistration(event, deadlines.first));
+    }
+    return out..sort((a, b) => a.deadline.deadlineAt.compareTo(b.deadline.deadlineAt));
+  }
 
   List<Event> get todayEvents {
     final now = DateTime.now();
