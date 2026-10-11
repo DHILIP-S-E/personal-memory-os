@@ -8,7 +8,8 @@ import 'package:personal_memory_os/core/providers/event_provider.dart';
 import 'package:personal_memory_os/core/providers/auth_provider.dart';
 import 'package:personal_memory_os/core/services/ai_service.dart';
 import 'package:personal_memory_os/core/theme/app_theme.dart';
-import 'package:personal_memory_os/shared/widgets/ai_suggestion_banner.dart';
+import 'package:personal_memory_os/features/events/widgets/extraction_review.dart';
+import 'package:personal_memory_os/shared/widgets/error_banner.dart';
 
 class EventCreateScreen extends StatefulWidget {
   /// Text shared into the app (share sheet) or pasted before opening: it is
@@ -41,6 +42,8 @@ class _EventCreateScreenState extends State<EventCreateScreen>
   final _pasteController = TextEditingController();
   bool _isParsing = false;
   EventExtractionResult? _extracted;
+  String? _extractError;
+  DateTime? _pickedStart; // chosen by the user when the page gave no start date
 
   @override
   void initState() {
@@ -82,19 +85,33 @@ class _EventCreateScreenState extends State<EventCreateScreen>
     setState(() {
       _isParsing = true;
       _extracted = null;
+      _extractError = null;
+      _pickedStart = null;
     });
     try {
-      final ai = context.read<AiService>();
-      final result = await ai.extractEventFromText(_pasteController.text);
-      setState(() => _extracted = result);
-    } catch (_) {
-      setState(() => _extracted = EventExtractionResult(
-            title: 'Event',
-            eventType: EventType.custom,
-          ));
+      final result = await context.read<AiService>().extractEventFromText(_pasteController.text);
+      if (mounted) setState(() => _extracted = result);
+    } catch (e) {
+      // Say what went wrong. A blank placeholder event would look like a result.
+      if (mounted) setState(() => _extractError = e.toString());
     } finally {
-      setState(() => _isParsing = false);
+      if (mounted) setState(() => _isParsing = false);
     }
+  }
+
+  /// The page did not give a start date, so the user chooses it. It is never filled in for them.
+  Future<void> _pickStart() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now.subtract(const Duration(days: 365)),
+      lastDate: now.add(const Duration(days: 365 * 5)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 9, minute: 0));
+    if (time == null || !mounted) return;
+    setState(() => _pickedStart = DateTime(date.year, date.month, date.day, time.hour, time.minute));
   }
 
   Future<void> _saveManual() async {
@@ -129,18 +146,26 @@ class _EventCreateScreenState extends State<EventCreateScreen>
   }
 
   Future<void> _saveExtracted() async {
-    if (_extracted == null) return;
+    final extracted = _extracted;
+    if (extracted == null) return;
+    final start = _pickedStart ?? extracted.startAt;
+    if (start == null) {
+      await _pickStart();
+      return;
+    }
     await _createEvent(
-      title: _extracted!.title,
-      description: _extracted!.description,
-      type: _extracted!.eventType,
-      startAt: _extracted!.startAt ?? DateTime.now().add(const Duration(days: 1)),
-      endAt: _extracted!.endAt,
-      location: _extracted!.location,
-      eventUrl: _extracted!.eventUrl,
-      organizer: _extracted!.organizer,
-      isVirtual: _extracted!.isVirtual ?? false,
-      registrationDeadline: _extracted!.registrationDeadline,
+      title: extracted.title,
+      description: extracted.description,
+      type: extracted.eventType,
+      startAt: start,
+      endAt: extracted.endAt,
+      location: extracted.location,
+      eventUrl: extracted.eventUrl,
+      organizer: extracted.organizer,
+      isVirtual: extracted.isVirtual ?? false,
+      registrationDeadline: extracted.registrationDeadline,
+      submissionDeadline: extracted.submissionDeadline,
+      registrationUrl: extracted.registrationUrl,
     );
   }
 
@@ -155,6 +180,8 @@ class _EventCreateScreenState extends State<EventCreateScreen>
     String? organizer,
     required bool isVirtual,
     DateTime? registrationDeadline,
+    DateTime? submissionDeadline,
+    String? registrationUrl,
   }) async {
     final userId = context.read<AuthProvider>().user?.id ?? 'local';
     final now = DateTime.now();
@@ -171,6 +198,17 @@ class _EventCreateScreenState extends State<EventCreateScreen>
         createdAt: now,
       ));
     }
+    if (submissionDeadline != null) {
+      deadlines.add(EventDeadline(
+        id: const Uuid().v4(),
+        eventId: '',
+        userId: userId,
+        title: 'Submission deadline',
+        deadlineType: DeadlineType.submission,
+        deadlineAt: submissionDeadline,
+        createdAt: now,
+      ));
+    }
 
     final event = Event(
       id: const Uuid().v4(),
@@ -183,6 +221,7 @@ class _EventCreateScreenState extends State<EventCreateScreen>
       location: location,
       eventUrl: eventUrl,
       organizer: organizer,
+      registrationUrl: registrationUrl,
       isVirtual: isVirtual,
       deadlines: deadlines,
       createdAt: now,
@@ -399,31 +438,32 @@ class _EventCreateScreenState extends State<EventCreateScreen>
               label: Text(_isParsing ? 'Extracting…' : 'Extract with AI'),
             ),
           ),
+          if (_extractError != null)
+            ErrorBanner(message: _extractError!, onRetry: _isParsing ? null : _parseText),
           if (_extracted != null) ...[
             const SizedBox(height: 20),
-            AiSuggestionBanner(
-              message: _extracted!.title,
-              detail: _extracted!.startAt != null
-                  ? '${_extracted!.startAt!.toLocal()}'
-                  : null,
-              confirmLabel: 'Create Event',
-              dismissLabel: 'Edit Manually',
-              onConfirm: _saveExtracted,
-              onDismiss: () {
-                // Populate manual form then switch tab
-                _titleController.text = _extracted!.title;
-                if (_extracted!.startAt != null) _startAt = _extracted!.startAt;
-                if (_extracted!.endAt != null) _endAt = _extracted!.endAt;
-                if (_extracted!.registrationDeadline != null) {
-                  _registrationDeadline = _extracted!.registrationDeadline;
+            ExtractionReview(
+              result: _extracted!,
+              pickedStart: _pickedStart,
+              onPickStart: _pickStart,
+              onCreate: _saveExtracted,
+              onEdit: () {
+                // Populate the manual form, then switch to it.
+                final extracted = _extracted!;
+                _titleController.text = extracted.title;
+                final start = _pickedStart ?? extracted.startAt;
+                if (start != null) _startAt = start;
+                if (extracted.endAt != null) _endAt = extracted.endAt;
+                if (extracted.registrationDeadline != null) {
+                  _registrationDeadline = extracted.registrationDeadline;
                 }
-                if (_extracted!.location != null) {
-                  _locationController.text = _extracted!.location!;
+                if (extracted.location != null) {
+                  _locationController.text = extracted.location!;
                 }
-                if (_extracted!.eventUrl != null) {
-                  _urlController.text = _extracted!.eventUrl!;
+                if (extracted.eventUrl != null) {
+                  _urlController.text = extracted.eventUrl!;
                 }
-                _eventType = _extracted!.eventType;
+                _eventType = extracted.eventType;
                 _tabController.animateTo(0);
                 setState(() => _extracted = null);
               },
