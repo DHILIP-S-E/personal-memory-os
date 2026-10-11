@@ -45,6 +45,20 @@ class EventExtractionResult {
   final String? organizer;
   final bool? isVirtual;
   final DateTime? registrationDeadline;
+  final DateTime? submissionDeadline;
+  final String? registrationUrl;
+
+  /// field name -> the exact words on the page that support it
+  final Map<String, String> evidence;
+
+  /// Fields the page did not state, so nothing was guessed for them.
+  final List<String> missingFields;
+
+  /// Fields whose time of day was not stated; the server filled in a default.
+  final List<String> assumedTimes;
+
+  /// Dates in the text that could be read two ways.
+  final List<String> ambiguousDates;
 
   const EventExtractionResult({
     required this.title,
@@ -57,6 +71,12 @@ class EventExtractionResult {
     this.organizer,
     this.isVirtual,
     this.registrationDeadline,
+    this.submissionDeadline,
+    this.registrationUrl,
+    this.evidence = const {},
+    this.missingFields = const [],
+    this.assumedTimes = const [],
+    this.ambiguousDates = const [],
   });
 }
 
