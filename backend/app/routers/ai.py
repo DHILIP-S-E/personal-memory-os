@@ -4,11 +4,14 @@ All Bedrock calls are server-side (FastAPI -> bedrock_service).
 Flutter never calls Bedrock directly.
 """
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.auth import get_current_user_id
 from app.services.bedrock_service import parse_reminder, extract_event
+from app.validation import clean_text, optional_http_url
 
 router = APIRouter()
 
@@ -18,8 +21,22 @@ class ParseReminderRequest(BaseModel):
     timezone: str = "UTC"
 
 
+MAX_EXTRACT_TEXT = 20_000
+
+
 class ExtractEventRequest(BaseModel):
     text: str
+    source_url: Optional[str] = None  # the page the text came from, if any
+
+    @field_validator("text")
+    @classmethod
+    def _text(cls, v):
+        return clean_text(v, "Text", max_len=MAX_EXTRACT_TEXT)
+
+    @field_validator("source_url")
+    @classmethod
+    def _source(cls, v):
+        return optional_http_url(v, "Source link")
 
 
 @router.post("/parse-reminder")
@@ -76,7 +93,7 @@ async def extract_event_endpoint(
     }
     """
     try:
-        result = extract_event(body.text)
+        result = extract_event(body.text, body.source_url)
         return result
     except ValueError as e:
         raise HTTPException(
