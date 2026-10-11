@@ -13,7 +13,9 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.validation import clean_text, optional_http_url, real_timezone
+from app.validation import clean_text, one_of, optional_http_url, real_timezone
+from app.routers.reminders import _cancel_cloud_layer, _schedule_cloud_layer
+from app.services import milestones
 from app.auth import get_current_user_id
 from app.database import get_db
 from app.models.event import Event, EventDeadline
@@ -36,6 +38,11 @@ class DeadlineIn(BaseModel):
     @classmethod
     def _title(cls, v):
         return clean_text(v, "Title")
+
+    @field_validator("deadline_type")
+    @classmethod
+    def _deadline_type(cls, v):
+        return milestones.normalize_type(v)[:50]
 
 
 class EventCreate(BaseModel):
@@ -267,7 +274,7 @@ async def apply_reminder_policy(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Create the reminders from the policy the user confirmed."""
+    """Create the reminders from the policy the user confirmed, on both alarm layers."""
     event = await _get_owned(event_id, user_id, db)
     now = datetime.utcnow()
     created = []
@@ -280,54 +287,94 @@ async def apply_reminder_policy(
         db.add(reminder)
         created.append(reminder)
     await db.commit()
+    for reminder in created:
+        _schedule_cloud_layer(reminder)  # the cloud layer, same as a reminder made by hand
     return [r.to_dict() for r in created]
 
 
-def _policy_for(event: Event) -> list[dict]:
-    from datetime import timezone as _tz
-    now = datetime.now(_tz.utc)
-    start = event.start_at if event.start_at.tzinfo else event.start_at.replace(tzinfo=_tz.utc)
-    deadlines = [
-        (d.title, d.deadline_at if d.deadline_at.tzinfo else d.deadline_at.replace(tzinfo=_tz.utc))
-        for d in event.deadlines
-    ]
-    return build_reminder_policy(event.title, event.event_type, start, deadlines, now)
+class RegistrationStatusIn(BaseModel):
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v):
+        return one_of(v, milestones.REGISTRATION_STATES, "Registration status")
 
 
-@router.get("/{event_id}/reminder-policy")
-async def preview_reminder_policy(
+@router.post("/{event_id}/registration-status")
+async def set_registration_status(
     event_id: str,
+    body: RegistrationStatusIn,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Preview the smart reminder policy for this event (R2.4). Nothing is created."""
+    """Track registration. Reaching registered, skipped, not eligible or expired stops the
+    registration reminders only; every other milestone's reminders keep running."""
     event = await _get_owned(event_id, user_id, db)
-    return [
-        {**r, "scheduled_at": r["scheduled_at"].isoformat()}
-        for r in _policy_for(event)
-    ]
-
-
-@router.post("/{event_id}/reminder-policy", status_code=status.HTTP_201_CREATED)
-async def apply_reminder_policy(
-    event_id: str,
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    """Create the reminders from the policy the user confirmed."""
-    event = await _get_owned(event_id, user_id, db)
-    now = datetime.utcnow()
-    created = []
-    for spec in _policy_for(event):
-        reminder = Reminder(
-            id=str(uuid.uuid4()), user_id=user_id, source="event",
-            context_id=event_id, timezone=event.timezone,
-            created_at=now, updated_at=now, offsets="[]", **spec,
-        )
-        db.add(reminder)
-        created.append(reminder)
+    event.registration_status = body.status
+    event.updated_at = datetime.utcnow()
+    stopped: list[str] = []
+    if milestones.stops_registration_reminders(body.status):
+        closed_status = milestones.milestone_status_for(body.status)
+        closed_ids = milestones.registration_milestone_ids([d.to_dict() for d in event.deadlines])
+        for d in event.deadlines:
+            if d.id in closed_ids:
+                d.status = closed_status
+                d.completed_at = datetime.utcnow()
+        stopped = await _stop_reminders(closed_ids, user_id, db)
     await db.commit()
-    return [r.to_dict() for r in created]
+    return {"event": event.to_dict(), "stopped_reminders": stopped}
+
+
+async def _milestone_action(event_id: str, deadline_id: str, new_status: str, user_id: str, db: AsyncSession):
+    event = await _get_owned(event_id, user_id, db)
+    deadline = next((d for d in event.deadlines if d.id == deadline_id), None)
+    if deadline is None:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+    deadline.status = new_status
+    deadline.completed_at = datetime.utcnow()
+    stopped = await _stop_reminders({deadline.id}, user_id, db)
+    if milestones.normalize_type(deadline.deadline_type) == milestones.REGISTRATION_TYPE:
+        event.registration_status = {"completed": "registered", "skipped": "skipped"}.get(new_status, event.registration_status)
+    await db.commit()
+    return {"milestone": deadline.to_dict(), "stopped_reminders": stopped}
+
+
+@router.post("/{event_id}/deadlines/{deadline_id}/complete")
+async def complete_milestone(
+    event_id: str, deadline_id: str,
+    user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db),
+):
+    """Mark one milestone done. Only its own reminders stop."""
+    return await _milestone_action(event_id, deadline_id, "completed", user_id, db)
+
+
+@router.post("/{event_id}/deadlines/{deadline_id}/skip")
+async def skip_milestone(
+    event_id: str, deadline_id: str,
+    user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db),
+):
+    return await _milestone_action(event_id, deadline_id, "skipped", user_id, db)
+
+
+async def _stop_reminders(milestone_ids: set[str], user_id: str, db: AsyncSession) -> list[str]:
+    """Cancel the active reminders that belong to these milestones, on both layers."""
+    if not milestone_ids:
+        return []
+    rows = (await db.execute(
+        select(Reminder).where(
+            Reminder.user_id == user_id,
+            Reminder.status == "active",
+            Reminder.milestone_id.in_(milestone_ids),
+        )
+    )).scalars().all()
+    ids = milestones.reminders_to_stop([r.to_dict() for r in rows], milestone_ids)
+    for reminder in rows:
+        if reminder.id in ids:
+            _cancel_cloud_layer(reminder)  # cancels the schedule for its current fire time
+            reminder.status = "cancelled"
+            reminder.updated_at = datetime.utcnow()
+    return ids
 
 
 def _policy_for(event: Event) -> list[dict]:
@@ -336,7 +383,11 @@ def _policy_for(event: Event) -> list[dict]:
     def aware(dt: datetime) -> datetime:
         return dt if dt.tzinfo else dt.replace(tzinfo=tz.utc)
 
-    deadlines = [(d.title, aware(d.deadline_at)) for d in event.deadlines]
+    # Finished milestones (done, skipped, expired) get no reminders.
+    deadlines = [
+        (d.title, aware(d.deadline_at), d.id)
+        for d in event.deadlines if d.status == milestones.ACTIVE
+    ]
     return build_reminder_policy(
         event.title, event.event_type, aware(event.start_at), deadlines,
         datetime.now(tz.utc),
